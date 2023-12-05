@@ -3,86 +3,92 @@ const spawn = require('child_process').spawn
 const tkt = require('tkt')
 const fs = require('fs')
 const path = require('path')
+const { url } = require('inspector')
 
 function createRendererFactory(
   url,
   { scale = 1, alpha = false, launchArgs = [] } = {},
 ) {
-  const DATA_URL_PREFIX = 'data:image/png;base64,'
-  return function createRenderer({ name = 'Worker' } = {}) {
-    const promise = (async () => {
-      const browser = await puppeteer.launch({
-        args: launchArgs,
-      })
-      const page = await browser.newPage()
-      page.on('console', (msg) => console.log('PAGE LOG:', msg.text()))
-      page.on('pageerror', (msg) => console.log('PAGE ERROR:', msg))
-      await page.goto(url, { waitUntil: 'load' })
-      const info = await page.evaluate(`(async () => {
-        let deadline = Date.now() + 10000
-        while (Date.now() < deadline) {
-          if (typeof getInfo === 'function') {
-            break
+  try{
+    const DATA_URL_PREFIX = 'data:image/png;base64,'
+    return function createRenderer({ name = 'Worker' } = {}) {
+      const promise = (async () => {
+        const browser = await puppeteer.launch({
+          args: launchArgs,
+        })
+        const page = await browser.newPage()
+        page.on('console', (msg) => console.log('PAGE LOG:', msg.text()))
+        page.on('pageerror', (msg) => console.log('PAGE ERROR:', msg))
+        await page.goto(url, { waitUntil: 'load' })
+        const info = await page.evaluate(`(async () => {
+          let deadline = Date.now() + 10000
+          while (Date.now() < deadline) {
+            if (typeof getInfo === 'function') {
+              break
+            }
+            await new Promise(r => setTimeout(r, 1000))
           }
-          await new Promise(r => setTimeout(r, 1000))
-        }
-        const info = await getInfo()
-        if (!info.width || !info.height) {
-          Object.assign(info, {
-            width: document.querySelector('#scene').offsetWidth,
-            height: document.querySelector('#scene').offsetHeight,
-          })
-        }
-        return info
-      })()`)
-      await page.setViewport({
-        width: info.width,
-        height: info.height,
-        deviceScaleFactor: scale,
-      })
-      return { browser, page, info }
-    })()
-    let rendering = false
-    return {
-      async getInfo() {
-        return (await promise).info
-      },
-      async render(i) {
-        if (rendering) {
-          throw new Error('render() may not be called concurrently!')
-        }
-        rendering = true
-        try {
-          const marks = [Date.now()]
-          const { page, info } = await promise
-          marks.push(Date.now())
-          const result = await page.evaluate(`seekToFrame(${i})`)
-          marks.push(Date.now())
-          const buffer =
-            typeof result === 'string' && result.startsWith(DATA_URL_PREFIX)
-              ? Buffer.from(result.substr(DATA_URL_PREFIX.length), 'base64')
-              : await page.screenshot({
-                  clip: { x: 0, y: 0, width: info.width, height: info.height },
-                  omitBackground: alpha,
-                })
-          marks.push(Date.now())
-          console.log(
-            name,
-            `render(${i}) finished`,
-            `timing=${marks
-              .map((v, i, a) => (i === 0 ? null : v - a[i - 1]))
-              .slice(1)}`,
-          )
-          return buffer
-        } finally {
-          rendering = false
-        }
-      },
-      async end() {
-        const { browser } = await promise
-        browser.close()
-      },
+          const info = await getInfo()
+          if (!info.width || !info.height) {
+            Object.assign(info, {
+              width: document.querySelector('#scene').offsetWidth,
+              height: document.querySelector('#scene').offsetHeight,
+            })
+          }
+          return info
+        })()`)
+        await page.setViewport({
+          width: info.width,
+          height: info.height,
+          deviceScaleFactor: scale,
+        })
+        return { browser, page, info }
+      })()
+      let rendering = false
+      return {
+        async getInfo() {
+          return (await promise).info
+        },
+        async render(i) {
+          if (rendering) {
+            throw new Error('render() may not be called concurrently!')
+          }
+          rendering = true
+          try {
+            const marks = [Date.now()]
+            const { page, info } = await promise
+            marks.push(Date.now())
+            const result = await page.evaluate(`seekToFrame(${i})`)
+            marks.push(Date.now())
+            const buffer =
+              typeof result === 'string' && result.startsWith(DATA_URL_PREFIX)
+                ? Buffer.from(result.substr(DATA_URL_PREFIX.length), 'base64')
+                : await page.screenshot({
+                    clip: { x: 0, y: 0, width: info.width, height: info.height },
+                    omitBackground: alpha,
+                  })
+            marks.push(Date.now())
+            console.log(
+              name,
+              `render(${i}) finished`,
+              `timing=${marks
+                .map((v, i, a) => (i === 0 ? null : v - a[i - 1]))
+                .slice(1)}`,
+            )
+            return buffer
+          } finally {
+            rendering = false
+          }
+        },
+        async end() {
+          const { browser } = await promise
+          browser.close()
+        },
+      }
     }
+  } catch (e)
+  {
+    createRendererFactory(url, { scale : scale, alpha : alpha, start:i, launchArgs : launchArgs })
   }
 }
 
@@ -106,7 +112,7 @@ function createParallelRender(max, rendererFactory) {
     }
     return null
   }
-  const work = async (fn, taskDescription) => {
+  const work = async (fn, taskDescription, toContinue) => {
     for (;;) {
       const worker = obtainWorker()
       if (!worker) {
@@ -131,7 +137,8 @@ function createParallelRender(max, rendererFactory) {
         return result
       } catch (e) {
         worker.renderer.end()
-        throw e
+        createRendererFactory(toContinue.url, toContinue.others)
+        console.log(e)
       } finally {
         working.delete(worker)
       }
@@ -141,8 +148,8 @@ function createParallelRender(max, rendererFactory) {
     async getInfo() {
       return work((r) => r.getInfo(), 'getInfo')
     },
-    async render(i) {
-      return work((r) => r.render(i), `render(${i})`)
+    async render(i, toContinue) {
+      return work((r) => r.render(i), `render(${i})`, toContinue)
     },
     async end() {
       return Promise.all(
@@ -277,7 +284,7 @@ tkt
       const start = args.start || 0
       const end = args.end || info.numberOfFrames
       for (let i = start; i < end; i++) {
-        promises.push({ promise: renderer.render(i), frame: i })
+        promises.push({ promise: renderer.render(i, {url:url, others:{scale:args.scale, alpha:args.alpha, start: i, launch: args}}), frame: i })
       }
       for (let i = 0; i < promises.length; i++) {
         console.log(
