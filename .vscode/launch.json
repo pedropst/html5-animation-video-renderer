@@ -11,8 +11,9 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "program": "${workspaceFolder}/render.js",
-            "args": ["--url=http://127.0.0.1:5500/template_02.html", "--video=/home/pedro/PERSONAL/painel/teste.mp4"]
+            "program": "${workspaceFolder}/determine_size.js",
+            // "program": "${workspaceFolder}/render.js",
+            // "args": ["--url=http://127.0.0.1:5500/template_03.html", "--video=/home/pedro/PERSONAL/painel/teste.mp4"]
         }
     ]
 }
