@@ -14,7 +14,7 @@ async function determine(){
         await page.goto('http://127.0.0.1:5500/template_03.html', { waitUntil: 'load' })      
         const info = await page.evaluate(() => {
             let size = 0;
-            const isOverflown = ({el}) => el.scrollHeight > 720/9
+            const isOverflown = ({el}) => el.scrollHeight > 90
             const resizeText = ({element, minSize = 10, maxSize = 512, step = 1, unit = 'px' }) => {
                 let i = minSize
                 let overflow = false
