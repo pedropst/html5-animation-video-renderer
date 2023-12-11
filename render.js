@@ -137,7 +137,9 @@ function createParallelRender(max, rendererFactory) {
         return result
       } catch (e) {
         worker.renderer.end()
-        createRendererFactory(toContinue.url, toContinue.others)
+        if (e.message == 'Execution context was destroyed, most likely because of a navigation.'){
+          createRendererFactory(toContinue.url, toContinue.others)
+        }
         console.log(e)
       } finally {
         working.delete(worker)

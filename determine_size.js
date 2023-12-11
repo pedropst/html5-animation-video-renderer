@@ -7,32 +7,30 @@ const launchArgs = ['--no-sandbox', '--disable-dev-shm-usage']
 
 async function determine(){
         const browser = await puppeteer.launch({
-            args: launchArgs,
-          })
+            args: launchArgs        })
+            // headless: false        })
         
         const page = await browser.newPage()
-        await page.goto('http://127.0.0.1:5500/template_03.html', { waitUntil: 'load' })      
+        await page.goto('http://127.0.0.1:5500/image.html', { waitUntil: 'load' })
+        // const container = await page.waitForSelector('.container');
         const info = await page.evaluate(() => {
-            let size = 0;
-            const isOverflown = ({el}) => el.scrollHeight > 90
-            const resizeText = ({element, minSize = 10, maxSize = 512, step = 1, unit = 'px' }) => {
-                let i = minSize
-                let overflow = false
-                                    
-                while (!overflow && i < maxSize) {
-                    element.style.fontSize = `${i}${unit}`
-                    overflow = isOverflown({el:element})
-                
+            const container = document.querySelectorAll('.container')[0].offsetHeight
+            const element = document.querySelectorAll('.text')[0]
+            const isOverflown = ({el}) => el.offsetHeight > container
+            const maxSize = 512
+            const unit = "px"
+            let i = 1
+            const step = 1
+            let size = 0
+            let overflow = false
+            while (!overflow && i < maxSize) {
+                element.style.fontSize = `${i}${unit}`
+                overflow = isOverflown({el:element})
+            
                 if (!overflow) i += step
-                }
-    
-                // revert to last state where no overflow happened
-                size = `${i - step}${unit}`
             }
-            resizeText({
-                element: document.querySelectorAll('.text')[0],
-                step: 1
-            })
+            size = `${i - step}${unit}`
+            element.style.fontSize = size
             return Promise.resolve(size);
         })
         fs.writeFile('/home/pedro/PERSONAL/painel/settings.json', info, err => {
